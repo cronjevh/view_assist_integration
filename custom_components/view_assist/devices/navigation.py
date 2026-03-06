@@ -35,6 +35,10 @@ NAVIGATE_SERVICE_SCHEMA = vol.Schema(
 
 _LOGGER = logging.getLogger(__name__)
 
+AI_RESPONSE_INFO_PATH = "/view-assist/info"
+AI_RESPONSE_REVERT_RETRY_COUNT = 3
+AI_RESPONSE_REVERT_RETRY_DELAY = 2
+
 
 class NavigationManager:
     """Class to manage navigation within the dashboard."""
@@ -163,7 +167,9 @@ class NavigationManager:
             )
             _LOGGER.debug("Adding revert to %s in %ss", revert_path, timeout)
             self.revert_view_task = self.hass.async_create_task(
-                self._display_revert_delay_task(path=revert_path, timeout=timeout)
+                self._display_revert_delay_task(
+                    path=revert_path, timeout=timeout, source_path=path
+                )
             )
 
     def navigate_home(self):
@@ -179,11 +185,26 @@ class NavigationManager:
             is_revert_action=False,
         )
 
-    async def _display_revert_delay_task(self, path: str, timeout: int = 0):
+    async def _display_revert_delay_task(
+        self, path: str, timeout: int = 0, source_path: str | None = None
+    ):
         """Display revert function.  To be called from task."""
         if timeout:
             await asyncio.sleep(timeout)
+
+        retry_count = 1
+        if source_path and source_path.rstrip("/") == AI_RESPONSE_INFO_PATH:
+            retry_count = AI_RESPONSE_REVERT_RETRY_COUNT
+            _LOGGER.debug(
+                "Applying info view revert retries (%s attempts every %ss)",
+                retry_count,
+                AI_RESPONSE_REVERT_RETRY_DELAY,
+            )
+
+        for attempt in range(retry_count):
             self.browser_navigate(path=path, is_revert_action=True)
+            if attempt < retry_count - 1:
+                await asyncio.sleep(AI_RESPONSE_REVERT_RETRY_DELAY)
 
     def cancel_display_revert_task(self):
         """Cancel any existing revert timer task."""
