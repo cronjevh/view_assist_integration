@@ -15,7 +15,7 @@ from .typed import (
 PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 DOMAIN = "view_assist"
-GITHUB_REPO = "dinki/View-Assist"
+GITHUB_REPO = "cronjevh/View-Assist"
 GITHUB_BRANCH = "main"
 GITHUB_DEV_BRANCH = "dev"
 GITHUB_TOKEN_FILE = "github.token"
