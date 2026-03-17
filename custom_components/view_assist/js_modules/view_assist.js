@@ -1,6 +1,7 @@
-import { timerCards } from "./timers.js?v=1.0.25";
+import { timerCards } from "./timers.js?v=1.0.28";
 
-const version = "1.0.25"
+const version = "1.0.28"
+const MIN_LISTENING_OVERLAY_MS = 1200;
 const TIMEOUT_ERROR = "SELECTTREE-TIMEOUT";
 
 export async function await_element(el, hard = false) {
@@ -329,6 +330,8 @@ class ViewAssist {
     this.serverTimeHandler = null;
     this.hide_header_timeout = null;
     this.hide_sidebar_timeout = null;
+    this.assist_overlay_transition_timeout = null;
+    this.assist_listening_started_at = 0;
     this.variables = new VAData();
     this.connected = false;
 
@@ -687,7 +690,7 @@ class ViewAssist {
     document.body.appendChild(htmlElement);
 
     // Load html from url
-    const html_response = await fetch("/view_assist/dashboard/overlay.html");
+    const html_response = await fetch(`/view_assist/dashboard/overlay.html?v=${version}`);
     if (!html_response.ok) {
       console.error("Overlay HTML not found - no overlays will be displayed");
       return;
@@ -697,7 +700,7 @@ class ViewAssist {
     htmlElement.shadowRoot.innerHTML = await html_response.text();
 
     var st = document.createElement("style");
-    const css_response = await fetch("/view_assist/dashboard/overlay.css");
+    const css_response = await fetch(`/view_assist/dashboard/overlay.css?v=${version}`);
     if (!css_response.ok) {
       console.error("Overlay CSS not found - no overlays will be displayed");
       return;
@@ -707,13 +710,13 @@ class ViewAssist {
     // Add custom overlays html/css
     try {
       // Load custom overlays html
-      const response = await fetch("/view_assist/custom_overlays/overlay.html");
+      const response = await fetch(`/view_assist/custom_overlays/overlay.html?v=${version}`);
       if (response.ok) {
         const custom_html = await response.text();
         htmlElement.shadowRoot.innerHTML += custom_html;
 
         // Load custom css
-        const custom_css = await fetch("/view_assist/custom_overlays/overlay.css");
+        const custom_css = await fetch(`/view_assist/custom_overlays/overlay.css?v=${version}`);
         if (custom_css.ok) {
           st.innerHTML += await custom_css.text();
         }
@@ -727,48 +730,77 @@ class ViewAssist {
     htmlElement.shadowRoot.appendChild(st);
   }
 
+  clear_assist_overlay_transition() {
+    if (this.assist_overlay_transition_timeout != null) {
+      clearTimeout(this.assist_overlay_transition_timeout);
+      this.assist_overlay_transition_timeout = null;
+    }
+  }
+
+  async apply_assist_overlay_state(state, style) {
+    let overlays = await selectTree(
+      document.body,
+      "view-assist-overlays $"
+    );
+
+    // Reset all overlays to ensure no stuck ones if style changes
+    overlays.querySelectorAll("*").forEach((div) => {
+      if (div.getAttribute("data-name") != null) {
+        div.style.display = "none";
+      }
+    });
+
+    const styleDiv = overlays.querySelector(`[id=${style}]`);
+    const listeningDiv = styleDiv.querySelector(`[id="listening"]`);
+    const processingDiv = styleDiv.querySelector(`[id="processing"]`);
+    const respondingDiv = styleDiv.querySelector(`[id="responding"]`);
+
+    const divs = { "listening": listeningDiv, "processing": processingDiv, "responding": respondingDiv };
+
+    if (state in divs && divs[state] != null) {
+      styleDiv.style.display = "block";
+    } else {
+      styleDiv.style.display = "none";
+    }
+
+    Object.entries(divs).forEach(([id, div]) => {
+      if (div != null) {
+        if (id == state) {
+          div.classList.add("active");
+          div.style.display = "block";
+        } else {
+          div.classList.remove("active");
+          div.style.display = "none";
+        }
+      }
+    });
+  }
+
   async show_assist_listening_overlay(state, style) {
     // Display listening message
     try {
-      let overlays = await selectTree(
-        document.body,
-        "view-assist-overlays $"
-      );
+      this.clear_assist_overlay_transition();
 
-      // Reset all overlays to ensure no stuck ones if style changes
-      overlays.querySelectorAll("*").forEach((div) => {
-        if (div.getAttribute("data-name") != null) {
-          div.style.display = "none";
+      if (state === "listening") {
+        this.assist_listening_started_at = Date.now();
+      } else if (["processing", "responding"].includes(state) && this.assist_listening_started_at > 0) {
+        const elapsed = Date.now() - this.assist_listening_started_at;
+        const remaining = MIN_LISTENING_OVERLAY_MS - elapsed;
+
+        if (remaining > 0) {
+          this.assist_overlay_transition_timeout = setTimeout(() => {
+            this.assist_overlay_transition_timeout = null;
+            this.show_assist_listening_overlay(state, style);
+          }, remaining);
+          return;
         }
-      });
 
-
-      const styleDiv = overlays.querySelector(`[id=${style}]`);
-      const listeningDiv = styleDiv.querySelector(`[id="listening"]`);
-      const processingDiv = styleDiv.querySelector(`[id="processing"]`);
-      const respondingDiv = styleDiv.querySelector(`[id="responding"]`);
-
-      const divs = { "listening": listeningDiv, "processing": processingDiv, "responding": respondingDiv };
-
-      if (state in divs && divs[state] != null) {
-        styleDiv.style.display = "block";
+        this.assist_listening_started_at = 0;
       } else {
-        styleDiv.style.display = "none";
+        this.assist_listening_started_at = 0;
       }
 
-
-      Object.entries(divs).forEach(([id, div]) => {
-        if (div != null) {
-          if (id == state) {
-            div.classList.add("active");
-            div.style.display = "block";
-          } else {
-            div.classList.remove("active");
-            div.style.display = "none";
-          }
-        }
-      });
-
+      await this.apply_assist_overlay_state(state, style);
     } catch (e) {
       console.log("Error showing overlay for style: ", style, "with action: ", state, "\n", e);
       return;
