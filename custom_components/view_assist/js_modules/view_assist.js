@@ -1,6 +1,6 @@
-import { timerCards } from "./timers.js?v=1.0.28";
+import { timerCards } from "./timers.js?v=1.0.29";
 
-const version = "1.0.28"
+const version = "1.0.29"
 const MIN_LISTENING_OVERLAY_MS = 1200;
 const TIMEOUT_ERROR = "SELECTTREE-TIMEOUT";
 
@@ -380,6 +380,8 @@ class ViewAssist {
       )
 
       enabled ? elMain?.style?.setProperty("--mdc-drawer-width", "0px") : elMain?.style?.removeProperty("--mdc-drawer-width");
+      // HA 2026.6 renamed the drawer width variable
+      enabled ? elMain?.style?.setProperty("--ha-sidebar-width", "0px") : elMain?.style?.removeProperty("--ha-sidebar-width");
 
       await selectTree(
         elMain, "$ partial-panel-resolver"
